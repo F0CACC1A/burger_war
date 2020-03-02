@@ -8,7 +8,7 @@
     </include>
     <!-- sample program node -->
 
-    <node pkg="burger_war" type="testRun.py" name="testRun" output="screen"/>
+    <node pkg="burger_war" type="testRun2.py" name="testRun" output="screen"/>
 
     <!-- END sample program node -->
 
