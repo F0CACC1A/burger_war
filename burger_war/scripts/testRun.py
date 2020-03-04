@@ -4,20 +4,24 @@
 import rospy
 import random
 
+from geometry_msgs.msg import Twist
 from geometry_msgs.msg import PoseWithCovarianceStamped
-import tf
-from sensor_msgs.msg import LaserScan
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import Imu
+from sensor_msgs.msg import LaserScan
+from sensor_msgs.msg import JointState
+from nav_msgs.msg import Odometry
+from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
+import tf
+
 import numpy as np
 import time
 import actionlib
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from nav_msgs.msg import Odometry
 import actionlib_msgs
-
-from geometry_msgs.msg import Twist
 
 # camera image 640*480
 img_w = 640
@@ -68,6 +72,9 @@ class RandomBot():
         # navigation publisher
         self.client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
 
+        self.scan = LaserScan()
+        self.lidar_sub = rospy.Subscriber('scan', LaserScan, self.lidarCallback)
+
         # usb camera
         self.img = None
         self.camera_preview = True
@@ -76,6 +83,15 @@ class RandomBot():
         self.image_sub = rospy.Subscriber(topicname_image_raw, Image, self.imageCallback)
 
         self.basic_mode_process_step_idx = 0 # process step in basic MODE
+
+	self.scan_r = 0
+	self.scan_rf = 0
+	self.scan_rb = 0
+	self.scan_f = 0
+	self.prev_r = 0
+	self.prev_rf = 0
+	self.prev_rb = 0
+	self.prev_f = 0
 
     # camera image call back sample
     # convert image topic to opencv object and show
@@ -87,12 +103,6 @@ class RandomBot():
 
         size = (img_w/image_resize_scale, img_h/image_resize_scale)
         frame = cv2.resize(self.img, size)
-
-        ###
-        #
-        # ここに観音さんスペシャル加える
-        #
-        ###
 
         if self.camera_preview:
             print("image show")
@@ -137,31 +147,81 @@ class RandomBot():
     def cancelGoal(self):
         self.client.cancel_goal()
 
-    def calcTwist(self):
+    # lidar scan topic call back sample
+    # update lidar scan state
+    def lidarCallback(self, data):
+        self.scan = data
 
-        value = random.randint(1,1000)
-        if value < 250:
-            x = 0.2
-            th = 0
-        elif value < 500:
-            x = -0.2
-            th = 0
-        elif value < 750:
-            x = 0
-            th = 1
-        elif value < 1000:
-            x = 0
-            th = -1
-        else:
-            x = 0
-            th = 0
+        # visualize scan data with radar chart
+#        angles = np.linspace(0, 2 * np.pi, len(self.scan.ranges) + 1, endpoint=True)
+#        values = np.concatenate((self.scan.ranges, [self.scan.ranges[0]]))
+#        ax = self.lidarFig.add_subplot(111, polar=True)
+#        ax.cla()
+#        ax.plot(angles, values, 'o-')
+#        ax.fill(angles, values, alpha=0.25)
+#        ax.set_rlim(0, 3.5)
+        # self.front_distance = self.scan.ranges[0]
+#        self.front_distance = min(min(self.scan.ranges[0:10]),min(self.scan.ranges[350:359]))
+#        self.front_scan = (sum(self.scan.ranges[0:4])+sum(self.scan.ranges[355:359])) / 10
+#        self.back_distance = (min(self.scan.ranges[170:190]))
+#        self.back_scan = (sum(self.scan.ranges[176:185])) / 10
+	self.prev_f  = self.scan_f
+	self.prev_rf = self.scan_rf
+	self.prev_r  = self.scan_r
+	self.prev_rb = self.scan_rb
+        self.scan_f  = (sum(self.scan.ranges[0:2])+sum(self.scan.ranges[358:359])) / 5
+        self.scan_rf = (sum(self.scan.ranges[298:302])) / 5
+        self.scan_r  = (sum(self.scan.ranges[268:272])) / 5
+        self.scan_rb = (sum(self.scan.ranges[238:242])) / 5
+        if self.scan_f  == float('inf'):
+	    self.scan_f  = 0.1
+        if self.scan_rf == float('inf'):
+	    self.scan_rf = 0.1
+        if self.scan_r  == float('inf'):
+	    self.scan_r  = 0.1
+        if self.scan_rb == float('inf'):
+	    self.scan_rb = 0.1
+        #print("Lider", self.scan_rf, self.scan_r, self.scan_rb)
+
+        # RESPECT @koy_tak        
+#	if (self.scan.ranges[0] != 0 and self.scan.ranges[0] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[10] != 0 and self.scan.ranges[10] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[350] != 0 and self.scan.ranges[350] < DISTANCE_TO_WALL_THRESHOLD):
+#            self.f_isFrontBumperHit = True
+#            print("self.f_isFrontBumperHit = True")
+#            self.cancelGoal()
+#        else:
+#            self.f_isFrontBumperHit = False
+
+    def calcTwist(self):
+	df = (self.scan_r + self.scan_rf + self.scan_rb) - (self.prev_r + self.prev_rf + self.prev_rb)
+        print("Lider", self.scan_rf, self.scan_r, self.scan_rb, df)
+	if self.scan_f < 0.1:
+	    x = -0.1
+	    th = 0
+	#elif self.scan_rf > self.scan_r * 1.2:
+	elif self.scan_rf - self.scan_rb > 0.1:
+	    x = 0
+	    th = -0.5
+	#elif self.scan_rb > self.scan_r * 1.2:
+	elif self.scan_rf - self.scan_rb < -0.1:
+	    x = 0
+	    th = 0.5
+	elif self.scan_f < 0.15 or self.scan_rf < self.scan_r:
+	    x = 0
+	    th = 1.5
+	else:
+	    x = 0.22
+	    # feedback control
+	    K1 = -3.0
+	    K2 = -1.0
+	    th = (self.scan_r - 0.15) * K1 + df * K2
+
         twist = Twist()
         twist.linear.x = x; twist.linear.y = 0; twist.linear.z = 0
         twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = th
         return twist
 
     def strategy(self):
-        r = rospy.Rate(5) # change speed 1fps
+        r = rospy.Rate(5) # change speed 5fps
 
         target_speed = 0
         target_turn = 0
@@ -169,15 +229,15 @@ class RandomBot():
         control_turn = 0
 
         # ---> testrun
-        while not rospy.is_shutdown():
-            NextGoal_coor = basic_coordinate[ self.basic_mode_process_step_idx ]
-            _x = NextGoal_coor[0]
-            _y = NextGoal_coor[1]
-            _th = NextGoal_coor[2] * DEGRAD
-            ret = self.setGoal(_x, _y, _th)
-            self.basic_mode_process_step_idx += 1
-            if self.basic_mode_process_step_idx >= len(basic_coordinate):
-                self.basic_mode_process_step_idx = 0
+        #while not rospy.is_shutdown():
+        #    NextGoal_coor = basic_coordinate[ self.basic_mode_process_step_idx ]
+        #    _x = NextGoal_coor[0]
+        #    _y = NextGoal_coor[1]
+        #    _th = NextGoal_coor[2] * DEGRAD
+        #    ret = self.setGoal(_x, _y, _th)
+        #    self.basic_mode_process_step_idx += 1
+        #    if self.basic_mode_process_step_idx >= len(basic_coordinate):
+        #        self.basic_mode_process_step_idx = 0
         # ---< testrun
             
         while not rospy.is_shutdown():
