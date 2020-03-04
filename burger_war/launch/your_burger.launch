@@ -4,7 +4,8 @@
 
     <!-- You can change control program  -->
 
-
+    <include file="$(find burger_navigation)/launch/burger_navigation.launch">
+    </include>
     <!-- sample program node -->
 
     <node pkg="burger_war" type="testRun2.py" name="testRun" output="screen"/>
