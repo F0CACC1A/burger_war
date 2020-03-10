@@ -33,26 +33,50 @@ PI = 3.1415
 DEGRAD = 3.141592/180
 
 # robot running coordinate in BASIC MODE
-basic_coordinate = np.array([
-    # x,    y,    th(deg)
-    [-1.0 , 0.3 ,  30],  # 1
-    [-1.0 ,-0.3 , 330],  # 2
-    [-0.6 , 0.0 ,   0],  # 3
-    [-0.5 ,-0.1 , 315],  # 4
-    [ 0   ,-0.6 , 180],  # 5
-    [ 0   ,-0.6 ,  90],  # 6
-    [ 0   ,-0.5 ,   0],  # 7
-    [ 0.5 ,-0.1 ,  45],  # 10
+#basic_coordinate = np.array([
+#    # x,    y,    th(deg)
+#    [-1.0 , 0.3 ,  30],  # 1
+#    [-1.0 ,-0.3 , 330],  # 2
+#    [-0.6 , 0.0 ,   0],  # 3
+#    [-0.5 ,-0.1 , 315],  # 4
+#    [ 0   ,-0.6 , 180],  # 5
+#    [ 0   ,-0.6 ,  90],  # 6
+#    [ 0   ,-0.5 ,   0],  # 7
+#    [ 0.5 ,-0.1 ,  45],  # 10
+#
+#    [ 1.0 ,-0.3 , 210],  # 1
+#    [ 1.0 , 0.3 , 150],  # 2
+#    [ 0.6 , 0.0 , 180],  # 3
+#    [ 0.5 , 0.1 , 135],  # 4
+#    [ 0   , 0.6 ,   0],  # 5
+#    [ 0   , 0.6 , 270],  # 6
+#    [ 0   , 0.5 , 180],  # 7
+#    [-0.5 , 0.1 , 225]]  # 10
+#)
 
-    [ 1.0 ,-0.3 , 210],  # 1
-    [ 1.0 , 0.3 , 150],  # 2
-    [ 0.6 , 0.0 , 180],  # 3
-    [ 0.5 , 0.1 , 135],  # 4
-    [ 0   , 0.6 ,   0],  # 5
-    [ 0   , 0.6 , 270],  # 6
-    [ 0   , 0.5 , 180],  # 7
-    [-0.5 , 0.1 , 225]]  # 10
-)
+target_coordinate = np.array([
+   [[ 1.20, 0.0 , 180],
+    [ 1.0 , 0.3 , 150],
+    [ 0.55, 0.0 , 180],
+    [ 1.0 ,-0.3 , 210],
+    [ 1.20, 0.0 , 180]],
+   [[ 0   , 1.20, 270],
+    [ 0   , 0.6 , 270],
+    [ 0   , 0.6 ,   0],
+    [ 0   , 0.5 , 180],
+    [ 0   , 1.20, 270]],
+   [[-1.20, 0.0 ,   0],
+    [-1.0 ,-0.3 , 330],
+    [-0.55, 0.0 ,   0],
+    [-1.0 , 0.3 ,  30],
+    [-1.20, 0.0 ,   0]],
+   [[ 0   ,-1.20,  90],
+    [ 0   ,-0.6 ,  90],
+    [ 0   ,-0.6 , 180],
+    [ 0   ,-0.5 ,   0],
+    [ 0   ,-1.20,  90]]
+])
+
 #    [-0.4, 0.0, 0],  # 1
 #    [-0.9, 0.0, 0],  # 2
 #    [-0.9, 0.4, 0],  # 3
@@ -75,6 +99,14 @@ class RandomBot():
         self.scan = LaserScan()
         self.lidar_sub = rospy.Subscriber('scan', LaserScan, self.lidarCallback)
 
+        # odom
+        topicname_odom = "odom"
+        self.odom = rospy.Subscriber(topicname_odom, Odometry, self.odomCallback)
+
+        # amcl pose
+        topicname_amcl_pose = "amcl_pose"
+        self.amcl_pose = rospy.Subscriber(topicname_amcl_pose, PoseWithCovarianceStamped, self.AmclPoseCallback)
+
         # usb camera
         self.img = None
         self.camera_preview = True
@@ -84,14 +116,23 @@ class RandomBot():
 
         self.basic_mode_process_step_idx = 0 # process step in basic MODE
 
-	self.scan_r = 0
-	self.scan_rf = 0
-	self.scan_rb = 0
-	self.scan_f = 0
-	self.prev_r = 0
-	self.prev_rf = 0
-	self.prev_rb = 0
-	self.prev_f = 0
+        self.scan_ave = np.zeros((2,12))        # [0]:latest, [1]:prev
+        self.scan_diff = np.zeros(12)
+        self.scan_sum = np.zeros(16)
+        self.myPosX = 0
+        self.myPosY = -150
+        self.myDirect = np.pi / 2
+
+    def odomCallback(self, data):
+        # print(data.pose.pose.position.x,data.pose.pose.position.y,data.pose.pose.orientation.z,data.pose.pose.orientation.w)
+        e = tf.transformations.euler_from_quaternion((data.pose.pose.orientation.x, data.pose.pose.orientation.y, data.pose.pose.orientation.z, data.pose.pose.orientation.w))
+        # print(e[2] / (2 * np.pi) * 360)
+        self.myDirect = e # rad
+
+    def AmclPoseCallback(self, data):
+        self.myPosX = data.pose.pose.position.x
+        self.myPosY = data.pose.pose.position.y
+        # print(self.myPosX, self.myPosY)
 
     # camera image call back sample
     # convert image topic to opencv object and show
@@ -105,7 +146,7 @@ class RandomBot():
         frame = cv2.resize(self.img, size)
 
         if self.camera_preview:
-            print("image show")
+            #print("image show")
             cv2.imshow("Image window", frame)
             cv2.waitKey(1)
 
@@ -152,76 +193,123 @@ class RandomBot():
     def lidarCallback(self, data):
         self.scan = data
 
-        # visualize scan data with radar chart
-#        angles = np.linspace(0, 2 * np.pi, len(self.scan.ranges) + 1, endpoint=True)
-#        values = np.concatenate((self.scan.ranges, [self.scan.ranges[0]]))
-#        ax = self.lidarFig.add_subplot(111, polar=True)
-#        ax.cla()
-#        ax.plot(angles, values, 'o-')
-#        ax.fill(angles, values, alpha=0.25)
-#        ax.set_rlim(0, 3.5)
-        # self.front_distance = self.scan.ranges[0]
-#        self.front_distance = min(min(self.scan.ranges[0:10]),min(self.scan.ranges[350:359]))
-#        self.front_scan = (sum(self.scan.ranges[0:4])+sum(self.scan.ranges[355:359])) / 10
-#        self.back_distance = (min(self.scan.ranges[170:190]))
-#        self.back_scan = (sum(self.scan.ranges[176:185])) / 10
-	self.prev_f  = self.scan_f
-	self.prev_rf = self.scan_rf
-	self.prev_r  = self.scan_r
-	self.prev_rb = self.scan_rb
-        self.scan_f  = (sum(self.scan.ranges[0:2])+sum(self.scan.ranges[358:359])) / 5
-        self.scan_rf = (sum(self.scan.ranges[298:302])) / 5
-        self.scan_r  = (sum(self.scan.ranges[268:272])) / 5
-        self.scan_rb = (sum(self.scan.ranges[238:242])) / 5
-        if self.scan_f  == float('inf'):
-	    self.scan_f  = 0.1
-        if self.scan_rf == float('inf'):
-	    self.scan_rf = 0.1
-        if self.scan_r  == float('inf'):
-	    self.scan_r  = 0.1
-        if self.scan_rb == float('inf'):
-	    self.scan_rb = 0.1
-        #print("Lider", self.scan_rf, self.scan_r, self.scan_rb)
+        self.scan_ave[1] = self.scan_ave[0]        # prev <= latest
+        self.scan_ave[0,0] = (sum(self.scan.ranges[0:2])+sum(self.scan.ranges[358:359])) * 200 # /5 * 1000
+        if self.scan_ave[0,0] == float('inf'):
+            self.scan_ave[0,0] = 100
+        i = 1
+        while i < 12:
+            self.scan_ave[0,i] = sum(self.scan.ranges[i*30-2:i*30+2]) * 200 # /5 * 1000
+            if self.scan_ave[0,i] == float('inf'):
+                self.scan_ave[0,i] = 100
+            i += 1
+        self.scan_diff = self.scan_ave[0] - self.scan_ave[1]
 
         # RESPECT @koy_tak        
-#	if (self.scan.ranges[0] != 0 and self.scan.ranges[0] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[10] != 0 and self.scan.ranges[10] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[350] != 0 and self.scan.ranges[350] < DISTANCE_TO_WALL_THRESHOLD):
+#        if (self.scan.ranges[0] != 0 and self.scan.ranges[0] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[10] != 0 and self.scan.ranges[10] < DISTANCE_TO_WALL_THRESHOLD) or (self.scan.ranges[350] != 0 and self.scan.ranges[350] < DISTANCE_TO_WALL_THRESHOLD):
 #            self.f_isFrontBumperHit = True
 #            print("self.f_isFrontBumperHit = True")
 #            self.cancelGoal()
 #        else:
 #            self.f_isFrontBumperHit = False
 
-    def calcTwist(self):
-	df = (self.scan_r + self.scan_rf + self.scan_rb) - (self.prev_r + self.prev_rf + self.prev_rb)
-        print("Lider", self.scan_rf, self.scan_r, self.scan_rb, df)
-	if self.scan_f < 0.1:
-	    x = -0.1
-	    th = 0
-	#elif self.scan_rf > self.scan_r * 1.2:
-	elif self.scan_rf - self.scan_rb > 0.1:
-	    x = 0
-	    th = -0.5
-	#elif self.scan_rb > self.scan_r * 1.2:
-	elif self.scan_rf - self.scan_rb < -0.1:
-	    x = 0
-	    th = 0.5
-	elif self.scan_f < 0.15 or self.scan_rf < self.scan_r:
-	    x = 0
-	    th = 1.5
-	else:
-	    x = 0.22
-	    # feedback control
-	    K1 = -3.0
-	    K2 = -1.0
-	    th = (self.scan_r - 0.15) * K1 + df * K2
+    def calcTwist(self, direction):
+        if direction == 0:
+            fr  = self.scan_ave[0,0]
+            f30 = self.scan_ave[0,1]
+            f60 = self.scan_ave[0,2]
+            side= self.scan_ave[0,3]
+            b60 = self.scan_ave[0,4]
+            b30 = self.scan_ave[0,5]
+            sign_x = 1
+            sign_rot = 1
+        elif direction == 1:
+            fr  = self.scan_ave[0,6]
+            f30 = self.scan_ave[0,5]
+            f60 = self.scan_ave[0,4]
+            side= self.scan_ave[0,3]
+            b60 = self.scan_ave[0,2]
+            b30 = self.scan_ave[0,1]
+            sign_x = -1
+            sign_rot = -1
+        elif direction == 2:
+            fr  = self.scan_ave[0,0]
+            f30 = self.scan_ave[0,11]
+            f60 = self.scan_ave[0,10]
+            side= self.scan_ave[0,9]
+            b60 = self.scan_ave[0,8]
+            b30 = self.scan_ave[0,7]
+            sign_x = 1
+            sign_rot = -1
+        else:
+            fr  = self.scan_ave[0,6]
+            f30 = self.scan_ave[0,7]
+            f60 = self.scan_ave[0,8]
+            side= self.scan_ave[0,9]
+            b60 = self.scan_ave[0,10]
+            b30 = self.scan_ave[0,11]
+            sign_x = -1
+            sign_rot = 1
+
+        ratiof = f30 / side
+        ratiob = b30 / side
+        print "Lider", '{:.0f}'.format(fr), '{:.0f}'.format(f30), '{:.0f}'.format(f60), '{:.0f}'.format(side), '{:.0f}'.format(b60), '{:.0f}'.format(b30),
+        print "Dir", '{:.3f}'.format(ratiof), '{:.3f}'.format(ratiob), 
+        ret = 0
+        if fr < 110:
+            x = -0.1
+            th = 0
+        elif fr < 200 or f30 < 160:
+        #elif fr < 300 or f30 < 160:
+            x = 0
+            #th = 2.0
+            th = 0
+            ret = 1
+        elif b60 < side:
+            x = 0
+            th = 0.5
+        elif f60 < side:
+            x = 0
+            th = -0.5
+        else:
+            x = 0.22
+            if ratiof > 3.0 or ratiof < 1.333:
+                ratiof = 2.0
+            if ratiob > 3.0 or ratiob < 1.333:
+                ratiob = 2.0
+            if side > 180:
+                if ratiof > 1.76 or ratiob < 2.34:
+                    th = 0.2
+                else:
+                    th = 0
+            elif side > 150:
+                if ratiof > 2.1 or ratiob < 1.9:
+                    th = 0.2
+                else:
+                    th = 0
+            elif side > 120:
+                if ratiof < 1.9 or ratiob > 2.1:
+                    th = -0.2
+                else:
+                    th = 0
+            else:
+                if ratiof < 2.34 or ratiob > 1.76:
+                    th = -0.2
+                else:
+                    th = 0
 
         twist = Twist()
-        twist.linear.x = x; twist.linear.y = 0; twist.linear.z = 0
-        twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = th
-        return twist
+        twist.linear.x = x * sign_x; twist.linear.y = 0; twist.linear.z = 0
+        twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = th * sign_rot
+        print "Twist", '{:.3f}'.format(x), '{:.3f}'.format(th)
+        #print " myPos", '{:.3f}'.format(self.myPosX), '{:.3f}'.format(self.myPosY), '{:.3f}'.format(self.myDirect)
+        #print " myPos", self.myPosX, self.myPosY, self.myDirect
+        self.vel_pub.publish(twist)
+        #return twist
+        return ret
 
     def strategy(self):
-        r = rospy.Rate(5) # change speed 5fps
+        r = rospy.Rate(3) # change speed 3fps
 
         target_speed = 0
         target_turn = 0
@@ -239,11 +327,37 @@ class RandomBot():
         #    if self.basic_mode_process_step_idx >= len(basic_coordinate):
         #        self.basic_mode_process_step_idx = 0
         # ---< testrun
-            
+        mode = 0
+        zone = 2
+        direction = 0 
         while not rospy.is_shutdown():
-            twist = self.calcTwist()
-            print(twist)
-            self.vel_pub.publish(twist)
+	    print 'mode=',mode,'zone =',zone, "step_idx=", self.basic_mode_process_step_idx
+            if mode == 0:
+		NextGoal_coor = target_coordinate[zone, self.basic_mode_process_step_idx ]
+		_x = NextGoal_coor[0]
+		_y = NextGoal_coor[1]
+		_th = NextGoal_coor[2] * DEGRAD
+		ret = self.setGoal(_x, _y, _th)
+		self.basic_mode_process_step_idx += 1
+		if self.basic_mode_process_step_idx >= 5:
+		    self.basic_mode_process_step_idx = 0
+		    if zone == 0:
+			zone = 3
+		    else:
+			zone -= 1
+		    mode = 1
+            elif mode == 1:
+                #print 'direction =', direction
+                ret = self.calcTwist(direction)
+                if ret == 1:
+                    #if direction == 3:
+                    #    direction = 0
+                    #else:
+                    #    direction += 1
+                    mode = 0
+
+            #print(twist)
+            #self.vel_pub.publish(twist)
 
             r.sleep()
 
