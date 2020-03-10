@@ -59,7 +59,7 @@ target_coordinate = np.array([
     [ 1.0 , 0.3 , 150],
     [ 0.55, 0.0 , 180],
     [ 1.0 ,-0.3 , 210],
-    [ 1.20, 0.0 , 180]],
+    [ 0.9 ,-0.4 , 230]],
    [[ 0   , 1.20, 270],
     [ 0   , 0.6 , 270],
     [ 0   , 0.6 ,   0],
@@ -69,7 +69,7 @@ target_coordinate = np.array([
     [-1.0 ,-0.3 , 330],
     [-0.55, 0.0 ,   0],
     [-1.0 , 0.3 ,  30],
-    [-1.20, 0.0 ,   0]],
+    [-0.9 , 0.4 ,  50]],
    [[ 0   ,-1.20,  90],
     [ 0   ,-0.6 ,  90],
     [ 0   ,-0.6 , 180],
@@ -221,6 +221,7 @@ class RandomBot():
             side= self.scan_ave[0,3]
             b60 = self.scan_ave[0,4]
             b30 = self.scan_ave[0,5]
+            bo  = self.scan_ave[0,7]
             sign_x = 1
             sign_rot = 1
         elif direction == 1:
@@ -230,6 +231,7 @@ class RandomBot():
             side= self.scan_ave[0,3]
             b60 = self.scan_ave[0,2]
             b30 = self.scan_ave[0,1]
+            bo  = self.scan_ave[0,11]
             sign_x = -1
             sign_rot = -1
         elif direction == 2:
@@ -239,6 +241,7 @@ class RandomBot():
             side= self.scan_ave[0,9]
             b60 = self.scan_ave[0,8]
             b30 = self.scan_ave[0,7]
+            bo  = self.scan_ave[0,5]
             sign_x = 1
             sign_rot = -1
         else:
@@ -248,6 +251,7 @@ class RandomBot():
             side= self.scan_ave[0,9]
             b60 = self.scan_ave[0,10]
             b30 = self.scan_ave[0,11]
+            bo  = self.scan_ave[0,1]
             sign_x = -1
             sign_rot = 1
 
@@ -260,7 +264,6 @@ class RandomBot():
             x = -0.1
             th = 0
         elif fr < 200 or f30 < 160:
-        #elif fr < 300 or f30 < 160:
             x = 0
             #th = 2.0
             th = 0
@@ -297,6 +300,10 @@ class RandomBot():
                     th = -0.2
                 else:
                     th = 0
+	    if bo > 200 and bo < 300:
+		x = 0
+		th = 0
+		ret = 1
 
         twist = Twist()
         twist.linear.x = x * sign_x; twist.linear.y = 0; twist.linear.z = 0
