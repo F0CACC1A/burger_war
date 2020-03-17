@@ -15,6 +15,7 @@ from std_msgs.msg import String
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import tf
+import json
 
 import numpy as np
 import time
@@ -55,23 +56,23 @@ DEGRAD = 3.141592/180
 #)
 
 target_coordinate = np.array([
-   [[ 1.20, 0.0 , 180],
-    [ 1.00, 0.3 , 150],
+#   [[ 1.20, 0.0 , 180],
+   [[ 1.00, 0.3 , 150],
     [ 0.55, 0.0 , 180],
     [ 1.00,-0.3 , 210],
     [ 0.9 ,-0.4 , 235]],
-   [[-0.1 , 0.8 , 300],
-    [ 0   , 0.6 ,   0],
+#   [[-0.1 , 0.7 , 300],
+   [[ 0   , 0.6 ,   0],
     [ 0   , 0.6 , 270],
     [ 0   , 0.6 , 180],
     [ 0.4 , 0.9 , 325]],
-   [[-1.2, -0.0 ,   0],
-    [-1.00,-0.3 , 330],
+#   [[-1.2, -0.0 ,   0],
+   [[-1.00,-0.3 , 330],
     [-0.55, 0.0 ,   0],
     [-1.00, 0.3 ,  30],
     [-0.9 , 0.4 ,  55]],
-   [[ 0.1 ,-0.8 , 120],
-    [ 0   ,-0.6 , 180],
+#   [[ 0.1 ,-0.7 , 120],
+   [[ 0   ,-0.6 , 180],
     [ 0   ,-0.6 ,  90],
     [ 0   ,-0.6 ,   0],
     [-0.4 ,-0.9 , 145]]
@@ -123,6 +124,12 @@ class RandomBot():
         self.myPosY = -150
         self.myDirect = np.pi / 2
 
+        ## war status
+        #topicname_war_state = "war_state"
+	#self.war_state = rospy.Subscriber(topicname_war_state, String, self.stateCallback)
+        #self.my_score = 0
+        #self.enemy_score = 0
+
     def odomCallback(self, data):
         # print(data.pose.pose.position.x,data.pose.pose.position.y,data.pose.pose.orientation.z,data.pose.pose.orientation.w)
         e = tf.transformations.euler_from_quaternion((data.pose.pose.orientation.x, data.pose.pose.orientation.y, data.pose.pose.orientation.z, data.pose.pose.orientation.w))
@@ -150,6 +157,21 @@ class RandomBot():
             cv2.imshow("Image window", frame)
             cv2.waitKey(1)
 
+    def stateCallback(self, state):
+        # print(state.data)
+        dic = json.loads(state.data)
+
+        if self.name == "red_bot": # red_bot
+            self.my_score = int(dic["scores"]["r"])
+            self.enemy_score = int(dic["scores"]["b"])
+        else: # blue_bot
+            self.my_score = int(dic["scores"]["b"])
+            self.enemy_score = int(dic["scores"]["r"])
+
+        print "Zone0", dic["targets"][ 8]["player"],dic["targets"][14]["player"],dic["targets"][ 6]["player"] 
+	print "Zone1", dic["targets"][ 7]["player"],dic["targets"][16]["player"],dic["targets"][10]["player"] 
+	print "Zone2", dic["targets"][11]["player"],dic["targets"][17]["player"],dic["targets"][13]["player"] 
+	print "Zone3", dic["targets"][12]["player"],dic["targets"][15]["player"],dic["targets"][ 9]["player"] 
     # Ref: https://hotblackrobotics.github.io/en/blog/2018/01/29/action-client-py/
     # Ref: https://github.com/hotic06/burger_war/blob/master/burger_war/scripts/navirun.py
     # RESPECT @hotic06
@@ -346,7 +368,8 @@ class RandomBot():
 		_th = NextGoal_coor[2] * DEGRAD
 		ret = self.setGoal(_x, _y, _th)
 		self.basic_mode_process_step_idx += 1
-		if self.basic_mode_process_step_idx >= 5:
+		#if self.basic_mode_process_step_idx >= 5:
+		if self.basic_mode_process_step_idx >= 4:
 		    self.basic_mode_process_step_idx = 0
 		    if zone == 0:
 			zone = 3
