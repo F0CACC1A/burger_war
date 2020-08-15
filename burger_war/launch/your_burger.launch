@@ -1,16 +1,18 @@
 <?xml version="1.0"?>
 <launch>
   <arg name="side" default="r"/> <!-- "b" = blue side, "r" = red side  -->
+    <!-- make args to params -->
+    <param name="side"    value="$(arg side)"/>
 
     <!-- You can change control program  -->
 
     <include file="$(find burger_navigation)/launch/burger_navigation.launch">
     </include>
-    <!-- sample program node -->
 
+    <!-- main program node -->
     <node pkg="burger_war" type="testRun2.py" name="testRun" output="screen"/>
 
-    <!-- END sample program node -->
+    <!-- END main program node -->
 
 
     <!-- End of your space  -->

@@ -1,7 +1,11 @@
 #!/bin/bash
 
-# set default level 1
-VALUE_L="1"
+if [ $# -ne 0 ]; then
+    VALUE_L=$1
+else
+    # set default level 1
+    VALUE_L="1"
+fi
 
 
 # get args level setting
