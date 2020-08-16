@@ -112,7 +112,12 @@ class RandomBot():
         self.my_score = 0
         self.enemy_score = 0
         self.target_cnt = 0
-        self.cur_zone = 0
+        if self.my_side == "r": # red_bot
+	    self.cur_zone = 0
+	else:
+	    self.cur_zone = 2
+        self.nxt_zone = self.cur_zone
+        self.nxt_idx = 0
         self.cur_target = target_pri[self.cur_zone][self.target_cnt]
 
 	self.score = np.array([[1,1,1],[1,1,1],[1,1,1],[1,1,1]])
@@ -129,14 +134,13 @@ class RandomBot():
         frame = cv2.resize(self.img, size)
 
         if self.camera_preview:
-            print("image show")
+            #print("image show")
             cv2.imshow("Image window", frame)
             cv2.waitKey(1)
 
     def stateCallback(self, state):
         # print(state.data)
         dic = json.loads(state.data)
-
         if self.my_side == "r": # red_bot
             self.my_score = int(dic["scores"]["r"])
             self.enemy_score = int(dic["scores"]["b"])
@@ -258,6 +262,23 @@ class RandomBot():
         twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = th
         return twist
 
+    def nextZone(self, cur_zone):
+	for zone in range(4):
+	    #s[zone] = np.sum(self.score[zone])
+	    s = np.sum(self.score, axis=1)
+	left = cur_zone + 1
+	if left > 3:
+	    left = 0
+	right = cur_zone - 1
+	if right < 0:
+	    right = 3
+	s[left] = s[left]+1
+	print "nextZone", s
+	if s[left] >= s[right]:
+	    return left,1
+	else:
+	    return right,0
+
     def strategy(self):
         r = rospy.Rate(5) # change speed 1fps
 
@@ -265,11 +286,16 @@ class RandomBot():
         target_turn = 0
         control_speed = 0
         control_turn = 0
+	mode = 0
 
         # ---> testrun
         while not rospy.is_shutdown():
             #NextGoal_coor = basic_coordinate[ self.basic_mode_process_step_idx ]
-            NextGoal_coor = target_coordinate[self.cur_zone][self.cur_target]
+	    if self.target_cnt < 3:
+		NextGoal_coor = target_coordinate[self.cur_zone][self.cur_target]
+	    else:
+		NextGoal_coor = zone_border_coordinate[self.cur_zone][self.nxt_idx]
+		self.cur_zone = self.nxt_zone
             _x = NextGoal_coor[0]
             _y = NextGoal_coor[1]
             _th = NextGoal_coor[2] * DEGRAD
@@ -286,26 +312,32 @@ class RandomBot():
 		if get_state >= 2:
 		    break
 
-	    if self.score[self.cur_zone][self.cur_target] != 0:
-		twist = Twist()
-		twist.linear.x = 0.2; twist.linear.y = 0; twist.linear.z = 0
-		twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
-		self.vel_pub.publish(twist)
-		r.sleep()
-		r.sleep()
-		twist.linear.x = 0.0; twist.linear.y = 0; twist.linear.z = 0
-		twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
-		self.vel_pub.publish(twist)
-            #self.basic_mode_process_step_idx += 1
-            #if self.basic_mode_process_step_idx >= len(basic_coordinate):
-            #    self.basic_mode_process_step_idx = 0
-            self.target_cnt += 1
-            if self.target_cnt > 2:
+	    if self.target_cnt < 3:
+		if self.score[self.cur_zone][self.cur_target] != 0:
+		    twist = Twist()
+		    twist.linear.x = 0.2; twist.linear.y = 0; twist.linear.z = 0
+		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
+		    self.vel_pub.publish(twist)
+		    r.sleep()
+		    r.sleep()
+		    twist.linear.x = 0.0; twist.linear.y = 0; twist.linear.z = 0
+		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
+		    self.vel_pub.publish(twist)
+
+	    if self.target_cnt < 2:
+		self.target_cnt += 1
+	    else:
 		self.target_cnt = 0
-		self.cur_zone += 1
-		if self.cur_zone > 3:
-		    self.cur_zone = 0
-	    self.cur_target = target_pri[self.cur_zone][self.target_cnt]
+	    while self.target_cnt < 3:
+		self.cur_target = target_pri[self.cur_zone][self.target_cnt]
+		if self.score[self.cur_zone][self.cur_target] != 0:
+		    break
+		self.target_cnt += 1
+
+	    if self.target_cnt > 2:
+		# Next Zone
+		self.nxt_zone, self.nxt_idx = self.nextZone(self.cur_zone)
+	
 
         # ---< testrun
 
