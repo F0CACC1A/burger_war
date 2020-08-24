@@ -16,6 +16,7 @@ from cv_bridge import CvBridge, CvBridgeError
 import cv2
 import tf
 import json
+import requests
 
 import numpy as np
 import time
@@ -54,11 +55,17 @@ target_coordinate = np.array([
     ]
 ])
 
-target_idx = np.array([
+target_idx_r = np.array([
     [ 13, 17, 11],
     [ 10, 16,  7],
     [  6, 14,  8],
     [  9, 15, 12]
+])
+target_idx_b = np.array([
+    [  6, 14,  8],
+    [  9, 15, 12],
+    [ 13, 17, 11],
+    [ 10, 16,  7]
 ])
 
 # Priority of targets for each Zone
@@ -71,7 +78,6 @@ target_pri = np.array([
 
 zone_border_coordinate = np.array([
     [
-	#[-0.5 ,-0.1 , 315],  # Zone 0 -> Zone 3
 	[-0.3 ,-0.3 , 315],  # Zone 0 -> Zone 3
 	[-0.3 , 0.3 ,  45]   # Zone 0 -> Zone 1
     ],[
@@ -92,6 +98,7 @@ class RandomBot():
         self.name = bot_name
         self.my_side = rospy.get_param("side")
         print "SIDE:", self.my_side
+        print "JUDGE_URL:", JUDGE_URL
         # velocity publisher
         self.vel_pub = rospy.Publisher('cmd_vel', Twist,queue_size=1)
         # navigation publisher
@@ -107,20 +114,21 @@ class RandomBot():
         self.basic_mode_process_step_idx = 0 # process step in basic MODE
 
         # war status
-        topicname_war_state = "war_state"
-        self.war_state = rospy.Subscriber(topicname_war_state, String, self.stateCallback)
+        #KEEP OLD CODE
+	#topicname_war_state = "war_state"
+        #self.war_state = rospy.Subscriber(topicname_war_state, String, self.stateCallback)
         self.my_score = 0
         self.enemy_score = 0
         self.target_cnt = 0
-        if self.my_side == "r": # red_bot
-	    self.cur_zone = 0
-	else:
-	    self.cur_zone = 2
+	self.cur_zone = 0
+	self.enemy_zone = 2
         self.nxt_zone = self.cur_zone
         self.nxt_idx = 0
         self.cur_target = target_pri[self.cur_zone][self.target_cnt]
 
 	self.score = np.array([[1,1,1],[1,1,1],[1,1,1],[1,1,1]])
+	self.score_prev = np.array([[1,1,1],[1,1,1],[1,1,1],[1,1,1]])
+	self.enemy_stamp = rospy.Time.now()
 
     # camera image call back sample
     # convert image topic to opencv object and show
@@ -138,9 +146,12 @@ class RandomBot():
             cv2.imshow("Image window", frame)
             cv2.waitKey(1)
 
-    def stateCallback(self, state):
-        # print(state.data)
-        dic = json.loads(state.data)
+    #KEEP OLD CODE
+    #def stateCallback(self, state):
+        #dic = json.loads(state.data)
+    def getWarState(self):
+	resp = requests.get(JUDGE_URL + "/warState")
+	dic = resp.json()
         if self.my_side == "r": # red_bot
             self.my_score = int(dic["scores"]["r"])
             self.enemy_score = int(dic["scores"]["b"])
@@ -150,16 +161,25 @@ class RandomBot():
 
 	for zone in range(4):
 	    for target in range(3):
-		s = dic["targets"][target_idx[zone][target]]["player"]
+		if self.my_side == "r":
+		    target_idx = target_idx_r[zone][target]
+		else:
+		    target_idx = target_idx_b[zone][target]
+
+		s = dic["targets"][target_idx]["player"]
+		self.score_prev[zone][target] = self.score[zone][target]
 		if s == "n":
 		    self.score[zone][target] = 1
 		elif s == self.my_side:
 		    self.score[zone][target] = 0
 		else:
 		    self.score[zone][target] = 2
-		#print dic["targets"][target_idx[zone][target]]["player"],
+		    if self.score_prev[zone][target] < 2:	# When the enemy get a marker,
+			self.enemy_zone = zone
+			self.enemy_stamp = rospy.Time.now()
+			print "#",
 		print self.score[zone][target],
-	    print
+	    print "|",
 
     def SetTwist(self,th):
         twist = Twist()
@@ -273,6 +293,13 @@ class RandomBot():
 	if right < 0:
 	    right = 3
 	s[left] = s[left]+1
+
+	tm = rospy.Time.now()
+	print "Zone", self.enemy_zone, "Stamp", self.enemy_stamp.secs, "Now", tm.secs
+	ofs = 4 - (tm.secs - self.enemy_stamp.secs) * 0.2
+	if ofs >= 0:
+	    s[self.enemy_zone] -= ofs
+
 	print "nextZone", s
 	if s[left] >= s[right]:
 	    return left,1
@@ -303,14 +330,15 @@ class RandomBot():
 
 	    while True:
 		r.sleep()
+		self.getWarState()
 		get_state = self.client.get_state()
-		print get_state
+		print get_state, self.target_cnt, self.cur_zone
+		if get_state >= 2:
+		    break
 		if self.score[self.cur_zone][self.cur_target] == 0:
 		    self.client.cancel_goal()
 		    while self.client.get_state() < 2:
 			r.sleep()
-		if get_state >= 2:
-		    break
 
 	    if self.target_cnt < 3:
 		if self.score[self.cur_zone][self.cur_target] != 0:
@@ -324,7 +352,8 @@ class RandomBot():
 		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
 		    self.vel_pub.publish(twist)
 
-	    if self.target_cnt < 2:
+	    #if self.target_cnt < 2:
+	    if self.target_cnt < 3:
 		self.target_cnt += 1
 	    else:
 		self.target_cnt = 0
@@ -334,22 +363,24 @@ class RandomBot():
 		    break
 		self.target_cnt += 1
 
-	    if self.target_cnt > 2:
+	    if self.target_cnt == 3:
 		# Next Zone
 		self.nxt_zone, self.nxt_idx = self.nextZone(self.cur_zone)
 	
 
         # ---< testrun
 
-        while not rospy.is_shutdown():
-            twist = self.calcTwist()
-            print(twist)
-            self.vel_pub.publish(twist)
+        #while not rospy.is_shutdown():
+        #    twist = self.calcTwist()
+        #    print(twist)
+        #    self.vel_pub.publish(twist)
 
-            r.sleep()
+        #    r.sleep()
 
 
 if __name__ == '__main__':
     rospy.init_node('random_run')
+    JUDGE_URL = rospy.get_param('~judge_url', 'http://127.0.0.1:5000')
+
     bot = RandomBot('Random')
     bot.strategy()

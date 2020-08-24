@@ -12,6 +12,10 @@
     <!-- main program node -->
     <node pkg="burger_war" type="testRun2.py" name="testRun" output="screen"/>
 
+<!--
+    <include file="$(find burger_war)/launch/obstacle_detector.launch"/>
+    <node pkg="burger_war" type="enemy_detector.py" name="enemy_detector_node" output="screen"/>
+-->
     <!-- END main program node -->
 
 

@@ -1,18 +1,16 @@
 #!/bin/bash
 
-if [ $# -ne 0 ]; then
-    VALUE_L=$1
-else
-    # set default level 1
-    VALUE_L="1"
-fi
-
+# set default level 1
+VALUE_L="1"
+# set default color red
+VALUE_SIDE="r"
 
 # get args level setting
-while getopts l: OPT
+while getopts l:s: OPT
 do
   case $OPT in
     "l" ) FLG_L="TRUE" ; VALUE_L="$OPTARG" ;;
+    "s" ) FLG_S="TRUE"  ; VALUE_SIDE="$OPTARG" ;;
   esac
 done
 
@@ -20,4 +18,4 @@ done
 bash judge/test_scripts/set_running.sh localhost:5000
 
 # launch robot control node
-roslaunch burger_war sim_robot_run.launch enemy_level:=$VALUE_L
+roslaunch burger_war sim_robot_run.launch enemy_level:=$VALUE_L side:=$VALUE_SIDE
