@@ -71,9 +71,9 @@ target_idx_b = np.array([
 # Priority of targets for each Zone
 target_pri = np.array([
     [ 0, 2, 1],
-    [ 2, 1, 0],
+    [ 0, 1, 2],
     [ 0, 2, 1],
-    [ 2, 1, 0]
+    [ 0, 1, 2]
 ])
 
 zone_border_coordinate = np.array([
