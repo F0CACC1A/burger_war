@@ -380,7 +380,8 @@ class RandomBot():
 
 if __name__ == '__main__':
     rospy.init_node('random_run')
-    JUDGE_URL = rospy.get_param('~judge_url', 'http://127.0.0.1:5000')
+    #JUDGE_URL = rospy.get_param('/send_id_to_judge/judge_url', 'http://127.0.0.1:5000')
+    JUDGE_URL = rospy.get_param('/send_id_to_judge/judge_url')
 
     bot = RandomBot('Random')
     bot.strategy()
