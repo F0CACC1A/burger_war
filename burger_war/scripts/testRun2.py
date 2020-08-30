@@ -418,7 +418,6 @@ class RandomBot():
 		# Recovery from stacking
 		if stack_count > 5:
 		    stack_count = 0
-		    print "Stack Recovery", self.scan_ave[0,0], self.scan_ave[0,6]
 		    twist = Twist()
 		    if self.scan_ave[0,0] > 300 or self.scan_ave[0,0] > self.scan_ave[0,6]:
 			twist.linear.x = 0.2
@@ -427,12 +426,15 @@ class RandomBot():
 		    twist.linear.y = 0; twist.linear.z = 0
 		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
 		    self.vel_pub.publish(twist)
+		    print "Stack Recovery", self.scan_ave[0,0], self.scan_ave[0,6], twist.linear.x
+		    r.sleep()
 		    r.sleep()
 		    r.sleep()
 		    r.sleep()
 		    twist.linear.x = 0.0; twist.linear.y = 0; twist.linear.z = 0
 		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
 		    self.vel_pub.publish(twist)
+		    print "End Recovery"
 	    #end while
 
 	    if self.target_cnt < 3:
