@@ -31,23 +31,22 @@ img_h = 480
 image_resize_scale = 1 # 8
 
 # PI
-PI = 3.1415
-DEGRAD = 3.141592/180
+DEGRAD = np.pi / 180
 
 target_coordinate = np.array([
     [
 	#[-1.0 ,-0.3 , 330],
-	[-0.9 ,-0.4 , 340],
-	[-0.6 , 0.0 ,   0],
-	[-0.9 , 0.4 ,  20]
+	[-0.8 ,-0.4 , 340],
+	[-0.5 , 0.0 ,   0],
+	[-0.8 , 0.4 ,  20]
     ],[
 	[ 0   , 0.5 , 180],
 	[ 0   , 0.5 , 270],
 	[ 0   , 0.5 ,   0]
     ],[
-	[ 0.9 , 0.4 , 160],
-	[ 0.6 , 0.0 , 180],
-	[ 0.9 ,-0.4 , 200]
+	[ 0.8 , 0.4 , 160],
+	[ 0.5 , 0.0 , 180],
+	[ 0.8 ,-0.4 , 200]
     ],[
 	[ 0   ,-0.5 ,   0],
 	[ 0   ,-0.5 ,  90],
@@ -78,17 +77,25 @@ target_pri = np.array([
 
 zone_border_coordinate = np.array([
     [
-	[-0.3 ,-0.3 , 315],  # Zone 0 -> Zone 3
-	[-0.3 , 0.3 ,  45]   # Zone 0 -> Zone 1
+	#[-0.3 ,-0.3 , 315],  # Zone 0 -> Zone 3
+	#[-0.3 , 0.3 ,  45]   # Zone 0 -> Zone 1
+	[-0.4 ,-0.2 , 315],  # Zone 0 -> Zone 3
+	[-0.4 , 0.2 ,  45]   # Zone 0 -> Zone 1
     ],[
-	[-0.3 , 0.3 , 225],  # Zone 1 -> Zone 0
-	[ 0.3 , 0.3 , 315]   # Zone 1 -> Zone 2
+	#[-0.3 , 0.3 , 225],  # Zone 1 -> Zone 0
+	#[ 0.3 , 0.3 , 315]   # Zone 1 -> Zone 2
+	[-0.2 , 0.4 , 225],  # Zone 1 -> Zone 0
+	[ 0.2 , 0.4 , 315]   # Zone 1 -> Zone 2
     ],[
-	[ 0.3 , 0.3 , 135],  # Zone 2 -> Zone 1
-	[ 0.3 ,-0.3 , 225]   # Zone 2 -> Zone 3
+	#[ 0.3 , 0.3 , 135],  # Zone 2 -> Zone 1
+	#[ 0.3 ,-0.3 , 225]   # Zone 2 -> Zone 3
+	[ 0.4 , 0.2 , 135],  # Zone 2 -> Zone 1
+	[ 0.4 ,-0.2 , 225]   # Zone 2 -> Zone 3
     ],[
-	[ 0.3 ,-0.3 ,  45],  # Zone 3 -> Zone 2
-	[-0.3 ,-0.3 , 135]   # Zone 3 -> Zone 0
+	#[ 0.3 ,-0.3 ,  45],  # Zone 3 -> Zone 2
+	#[-0.3 ,-0.3 , 135]   # Zone 3 -> Zone 0
+	[ 0.2 ,-0.4 ,  45],  # Zone 3 -> Zone 2
+	[-0.2 ,-0.4 , 135]   # Zone 3 -> Zone 0
     ]
 ])
 
@@ -104,6 +111,18 @@ class RandomBot():
         # navigation publisher
         self.client = actionlib.SimpleActionClient('move_base',MoveBaseAction)
 
+        # Lidar
+        self.scan = LaserScan()
+        self.lidar_sub = rospy.Subscriber('scan', LaserScan, self.lidarCallback)
+
+        # odom
+        topicname_odom = "odom"
+        self.odom = rospy.Subscriber(topicname_odom, Odometry, self.odomCallback)
+
+        # amcl pose
+        topicname_amcl_pose = "amcl_pose"
+        self.amcl_pose = rospy.Subscriber(topicname_amcl_pose, PoseWithCovarianceStamped, self.AmclPoseCallback)
+
         # usb camera
         self.img = None
         self.camera_preview = True
@@ -113,10 +132,16 @@ class RandomBot():
 
         self.basic_mode_process_step_idx = 0 # process step in basic MODE
 
+        self.scan_ave = np.zeros((2,12))        # [0]:latest, [1]:prev
+        self.myPosX = 0
+        #self.myPosY = -150
+        self.myPosY = -130
+        #self.myDirect = np.pi / 2
+        self.myYawA = 0
+        self.myYawB = 0
+	self.myPos = np.zeros((4,10))
+
         # war status
-        #KEEP OLD CODE
-	#topicname_war_state = "war_state"
-        #self.war_state = rospy.Subscriber(topicname_war_state, String, self.stateCallback)
         self.my_score = 0
         self.enemy_score = 0
         self.target_cnt = 0
@@ -129,6 +154,38 @@ class RandomBot():
 	self.score = np.array([[1,1,1],[1,1,1],[1,1,1],[1,1,1]])
 	self.score_prev = np.array([[1,1,1],[1,1,1],[1,1,1],[1,1,1]])
 	self.enemy_stamp = rospy.Time.now()
+
+    def odomCallback(self, data):
+        # print(data.pose.pose.position.x,data.pose.pose.position.y,data.pose.pose.orientation.z,data.pose.pose.orientation.w)
+        e = tf.transformations.euler_from_quaternion((data.pose.pose.orientation.x, data.pose.pose.orientation.y, data.pose.pose.orientation.z, data.pose.pose.orientation.w))
+        # print(e[2] / (2 * np.pi) * 360)
+        self.myYawA = e[2] / DEGRAD - 90
+	if self.myYawA < 0:
+	    self.myYawA += 360
+        self.myYawB = e[2] / DEGRAD + 90
+	if self.myYawB < 0:
+	    self.myYawB += 360
+
+    def AmclPoseCallback(self, data):
+        self.myPosX = data.pose.pose.position.x * 100
+        self.myPosY = data.pose.pose.position.y * 100
+        # print(self.myPosX, self.myPosY)
+
+    # Lidar
+    def lidarCallback(self, data):
+        self.scan = data
+
+        self.scan_ave[1] = self.scan_ave[0]        # prev <= latest
+        self.scan_ave[0,0] = (sum(self.scan.ranges[0:2])+sum(self.scan.ranges[358:359])) * 200 # /5 * 1000
+        if self.scan_ave[0,0] == float('inf'):
+            self.scan_ave[0,0] = 100
+        i = 1
+        while i < 12:
+            self.scan_ave[0,i] = sum(self.scan.ranges[i*30-2:i*30+2]) * 200 # /5 * 1000
+            if self.scan_ave[0,i] == float('inf'):
+                self.scan_ave[0,i] = 100
+            i += 1
+        #self.scan_diff = self.scan_ave[0] - self.scan_ave[1]
 
     # camera image call back sample
     # convert image topic to opencv object and show
@@ -146,9 +203,6 @@ class RandomBot():
             cv2.imshow("Image window", frame)
             cv2.waitKey(1)
 
-    #KEEP OLD CODE
-    #def stateCallback(self, state):
-        #dic = json.loads(state.data)
     def getWarState(self):
 	resp = requests.get(JUDGE_URL + "/warState")
 	dic = resp.json()
@@ -179,7 +233,7 @@ class RandomBot():
 			self.enemy_stamp = rospy.Time.now()
 			print "#",
 		print self.score[zone][target],
-	    print "|",
+	    print "/",
 
     def SetTwist(self,th):
         twist = Twist()
@@ -314,10 +368,10 @@ class RandomBot():
         control_speed = 0
         control_turn = 0
 	mode = 0
+	stack_count = 0
 
         # ---> testrun
         while not rospy.is_shutdown():
-            #NextGoal_coor = basic_coordinate[ self.basic_mode_process_step_idx ]
 	    if self.target_cnt < 3:
 		NextGoal_coor = target_coordinate[self.cur_zone][self.cur_target]
 	    else:
@@ -332,13 +386,54 @@ class RandomBot():
 		r.sleep()
 		self.getWarState()
 		get_state = self.client.get_state()
-		print get_state, self.target_cnt, self.cur_zone
+		print get_state, self.target_cnt, self.cur_zone,
 		if get_state >= 2:
 		    break
 		if self.score[self.cur_zone][self.cur_target] == 0:
 		    self.client.cancel_goal()
 		    while self.client.get_state() < 2:
 			r.sleep()
+
+		# Calc current position
+		self.myPos = np.roll(self.myPos,1)
+		self.myPos[0][0] = self.myPosX
+		self.myPos[1][0] = self.myPosY
+		self.myPos[2][0] = self.myYawA
+		self.myPos[3][0] = self.myYawB
+
+		print " myPos", '{:.1f}'.format(self.myPosX), '{:.1f}'.format(self.myPosY), '{:.1f}'.format(self.myYawA), '{:.1f}'.format(self.myYawB),
+		myPos_std = np.std(self.myPos, axis=1)
+		print "stdout", '{:.1f}'.format(myPos_std[0]), '{:.1f}'.format(myPos_std[1]), '{:.1f}'.format(myPos_std[2]), '{:.1f}'.format(myPos_std[3]), stack_count
+
+		if myPos_std[2] < myPos_std[3]:
+			myPos_std23 = myPos_std[2]
+		else:
+			myPos_std23 = myPos_std[3]
+		if (myPos_std[0] < 1.0) and (myPos_std[1] < 1.0) and (myPos_std23 < 5.0):
+		    stack_count += 1
+		elif stack_count > 0:
+		    stack_count -= 1
+		else:
+		    stack_count = 0
+		# Recovery from stacking
+		if stack_count > 5:
+		    stack_count = 0
+		    print "Stack Recovery", self.scan_ave[0,0], self.scan_ave[0,6]
+		    twist = Twist()
+		    if self.scan_ave[0,0] > 300 or self.scan_ave[0,0] > self.scan_ave[0,6]:
+			twist.linear.x = 0.2
+		    else:
+			twist.linear.x = -0.2
+		    twist.linear.y = 0; twist.linear.z = 0
+		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
+		    self.vel_pub.publish(twist)
+		    r.sleep()
+		    r.sleep()
+		    r.sleep()
+		    twist.linear.x = 0.0; twist.linear.y = 0; twist.linear.z = 0
+		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
+		    self.vel_pub.publish(twist)
+	    #end while
 
 	    if self.target_cnt < 3:
 		if self.score[self.cur_zone][self.cur_target] != 0:
@@ -352,7 +447,6 @@ class RandomBot():
 		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
 		    self.vel_pub.publish(twist)
 
-	    #if self.target_cnt < 2:
 	    if self.target_cnt < 3:
 		self.target_cnt += 1
 	    else:
@@ -380,8 +474,7 @@ class RandomBot():
 
 if __name__ == '__main__':
     rospy.init_node('random_run')
-    #JUDGE_URL = rospy.get_param('/send_id_to_judge/judge_url', 'http://127.0.0.1:5000')
-    JUDGE_URL = rospy.get_param('/send_id_to_judge/judge_url')
+    JUDGE_URL = rospy.get_param('/send_id_to_judge/judge_url', 'http://127.0.0.1:5000')
 
     bot = RandomBot('Random')
     bot.strategy()
