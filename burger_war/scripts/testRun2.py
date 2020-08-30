@@ -350,7 +350,7 @@ class RandomBot():
 
 	tm = rospy.Time.now()
 	print "Zone", self.enemy_zone, "Stamp", self.enemy_stamp.secs, "Now", tm.secs
-	ofs = 4 - (tm.secs - self.enemy_stamp.secs) * 0.2
+	ofs = 6 - (tm.secs - self.enemy_stamp.secs) * 0.2
 	if ofs >= 0:
 	    s[self.enemy_zone] -= ofs
 
