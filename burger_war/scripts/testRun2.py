@@ -393,9 +393,9 @@ class RandomBot():
 		print get_state, self.target_cnt, self.cur_zone,
 		cur_time = rospy.Time.now()
 		f_skip = (cur_time.secs - time_setGoal.secs >= 15)
-		if get_state >= 2 or f_skip:
+		if get_state >= 2:
 		    break
-		if self.score[self.cur_zone][self.cur_target] == 0:
+		if self.score[self.cur_zone][self.cur_target] == 0 or f_skip:
 		    self.client.cancel_goal()
 		    while self.client.get_state() < 2:
 			r.sleep()
@@ -409,8 +409,7 @@ class RandomBot():
 
 		print " myPos", '{:.1f}'.format(self.myPosX), '{:.1f}'.format(self.myPosY), '{:.1f}'.format(self.myYawA), '{:.1f}'.format(self.myYawB),
 		myPos_std = np.std(self.myPos, axis=1)
-		print "stdout", '{:.1f}'.format(myPos_std[0]), '{:.1f}'.format(myPos_std[1]), '{:.1f}'.format(myPos_std[2]), '{:.1f}'.format(myPos_std[3]), stack_count
-
+		print "stdout", '{:.1f}'.format(myPos_std[0]), '{:.1f}'.format(myPos_std[1]), '{:.1f}'.format(myPos_std[2]), '{:.1f}'.format(myPos_std[3]), stack_count,(cur_time.secs - time_setGoal.secs)
 		if myPos_std[2] < myPos_std[3]:
 			myPos_std23 = myPos_std[2]
 		else:
