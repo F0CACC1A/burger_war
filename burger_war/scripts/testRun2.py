@@ -346,7 +346,7 @@ class RandomBot():
 	right = cur_zone - 1
 	if right < 0:
 	    right = 3
-	s[left] = s[left]+1
+	#s[left] = s[left]+1
 
 	tm = rospy.Time.now()
 	print "Zone", self.enemy_zone, "Stamp", self.enemy_stamp.secs, "Now", tm.secs
@@ -369,6 +369,8 @@ class RandomBot():
         control_turn = 0
 	mode = 0
 	stack_count = 0
+	time_setGoal = rospy.Time.now()
+	f_skip = False
 
         # ---> testrun
         while not rospy.is_shutdown():
@@ -381,13 +383,17 @@ class RandomBot():
             _y = NextGoal_coor[1]
             _th = NextGoal_coor[2] * DEGRAD
             ret = self.setGoal(_x, _y, _th)
+	    time_setGoal = rospy.Time.now()
+	    f_skip = False
 
 	    while True:
 		r.sleep()
 		self.getWarState()
 		get_state = self.client.get_state()
 		print get_state, self.target_cnt, self.cur_zone,
-		if get_state >= 2:
+		cur_time = rospy.Time.now()
+		f_skip = (cur_time.secs - time_setGoal.secs >= 15)
+		if get_state >= 2 or f_skip:
 		    break
 		if self.score[self.cur_zone][self.cur_target] == 0:
 		    self.client.cancel_goal()
@@ -419,14 +425,31 @@ class RandomBot():
 		if stack_count > 5:
 		    stack_count = 0
 		    twist = Twist()
+		    turn_left = False
+		    turn_right = False
+		    if self.scan_ave[0,9] < 250:
+			if self.scan_ave[0,3] > 300:
+			    turn_left = True
+		    if self.scan_ave[0,3] < 250:
+			if self.scan_ave[0,9] > 300:
+			    turn_right = True
+
 		    if self.scan_ave[0,0] > 300 or self.scan_ave[0,0] > self.scan_ave[0,6]:
 			twist.linear.x = 0.2
+			if turn_left:
+			    twist.angular.z = 0.5
+			if turn_right:
+			    twist.angular.z = -0.5
 		    else:
 			twist.linear.x = -0.2
+			if turn_left:
+			    twist.angular.z = -0.5
+			if turn_right:
+			    twist.angular.z = 0.5
 		    twist.linear.y = 0; twist.linear.z = 0
-		    twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
+		    twist.angular.x = 0; twist.angular.y = 0;
 		    self.vel_pub.publish(twist)
-		    print "Stack Recovery", self.scan_ave[0,0], self.scan_ave[0,6], twist.linear.x
+		    print "Stack Recovery", "F",self.scan_ave[0,0], "B",self.scan_ave[0,6], "L",self.scan_ave[0,3], "R",self.scan_ave[0,9], twist.linear.x, twist.angular.z
 		    r.sleep()
 		    r.sleep()
 		    r.sleep()
@@ -437,7 +460,9 @@ class RandomBot():
 		    print "End Recovery"
 	    #end while
 
-	    if self.target_cnt < 3:
+	    if f_skip:
+		    print "SKIPPED."
+	    if self.target_cnt < 3 and (not f_skip):
 		if self.score[self.cur_zone][self.cur_target] != 0:
 		    twist = Twist()
 		    twist.linear.x = 0.2; twist.linear.y = 0; twist.linear.z = 0
